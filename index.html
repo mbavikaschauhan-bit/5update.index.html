@@ -2295,6 +2295,9 @@
                                 </div>
                                 <button id="apply-filter-btn" class="btn-primary font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit">Apply</button>
                                 <button id="reset-filter-btn" class="font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">Reset</button>
+                                <button id="export-csv-btn" class="font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit flex items-center justify-center" style="background-color: #10b981; color: white;">
+                                    <i data-feather="download" class="mr-2 h-4 w-4"></i>Export CSV
+                                </button>
                             </div>
                         </div>
 
@@ -13254,6 +13257,172 @@
             // Render statement without filters (show all data)
             renderStatement();
         });
+
+        // Export CSV functionality
+        document.getElementById('export-csv-btn')?.addEventListener('click', () => {
+            exportStatementToCSV();
+        });
+
+        const exportStatementToCSV = () => {
+            try {
+                console.log('Exporting statement to CSV...');
+                
+                // Get current data
+                const trades = appState.trades || [];
+                const ledger = appState.ledger || [];
+                
+                // Create CSV headers to match the table exactly
+                const headers = [
+                    'Date',
+                    'Symbol/Desc',
+                    'Direction',
+                    'Segment',
+                    'Amount (₹)',
+                    'Gross P/L',
+                    'Charges',
+                    'Net P/L',
+                    'Net P/L %',
+                    'Win/Loss',
+                    'Status',
+                    'Entry Price',
+                    'Entry Qty',
+                    'Entry Date',
+                    'Stop Loss',
+                    'Target Price',
+                    'Exit Price',
+                    'Exit Qty',
+                    'Exit Date',
+                    'Strategy',
+                    'Outcome Summary',
+                    'Emotional State',
+                    'Notes'
+                ];
+                
+                // Combine trades and ledger data
+                const allRows = [];
+                
+                // Add trades data
+                trades.forEach(t => {
+                    const isClosed = t.exit_date && t.exit_price && (!t.exit_quantity || t.exit_quantity >= t.quantity);
+                    const isPartialExit = t.exit_date && t.exit_price && t.exit_quantity && t.exit_quantity < t.quantity;
+                    const pnl = (isClosed || isPartialExit) ? calculateNetPnl(t) : 0;
+                    const netProfitPercentage = (isClosed || isPartialExit) && t.entry_price ? ((pnl / (t.entry_price * (t.quantity || 0))) * 100) : 0;
+                    const netPnl = pnl - (t.charges || 0);
+                    const winLoss = netPnl > 0 ? 'Win' : (netPnl < 0 ? 'Loss' : '—');
+                    
+                    allRows.push({
+                        date: formatDateForDisplay(t.entry_date) || '—',
+                        symbol: t.asset || '—',
+                        direction: t.direction || '—',
+                        segment: t.segment || '—',
+                        amount: '—',
+                        gross: pnl.toFixed(2),
+                        charges: (t.charges || 0).toFixed(2),
+                        net: netPnl.toFixed(2),
+                        netPercentage: netProfitPercentage.toFixed(2),
+                        winLoss: winLoss,
+                        status: isClosed ? 'Closed' : (isPartialExit ? 'Partial Exit' : 'Open'),
+                        entryPrice: t.entry_price ? parseFloat(t.entry_price).toFixed(2) : '—',
+                        entryQty: t.quantity || '—',
+                        entryDate: formatDateForDisplay(t.entry_date) || '—',
+                        stopLoss: t.stop_loss ? parseFloat(t.stop_loss).toFixed(2) : '—',
+                        targetPrice: (t.target_price || t.target) ? parseFloat(t.target_price || t.target).toFixed(2) : '—',
+                        exitPrice: t.exit_price ? parseFloat(t.exit_price).toFixed(2) : '—',
+                        exitQty: t.exit_quantity || '—',
+                        exitDate: formatDateForDisplay(t.exit_date) || '—',
+                        strategy: t.strategy || '—',
+                        outcomeSummary: t.outcomeSummary || '—',
+                        emotionalState: t.emotionalState || '—',
+                        notes: t.reasons || '—'
+                    });
+                });
+                
+                // Add ledger data (deposits and withdrawals)
+                ledger.forEach(l => {
+                    allRows.push({
+                        date: formatDateForDisplay(l.date) || '—',
+                        symbol: l.notes || l.type || '—',
+                        direction: l.type === 'Deposit' ? 'Credit' : 'Debit',
+                        segment: '—',
+                        amount: parseFloat(l.amount || 0).toFixed(2),
+                        gross: '—',
+                        charges: '—',
+                        net: parseFloat(l.amount || 0).toFixed(2),
+                        netPercentage: '—',
+                        winLoss: '—',
+                        status: 'Completed',
+                        entryPrice: '—',
+                        entryQty: '—',
+                        entryDate: formatDateForDisplay(l.date) || '—',
+                        stopLoss: '—',
+                        targetPrice: '—',
+                        exitPrice: '—',
+                        exitQty: '—',
+                        exitDate: '—',
+                        strategy: '—',
+                        outcomeSummary: '—',
+                        emotionalState: '—',
+                        notes: l.notes || '—'
+                    });
+                });
+                
+                // Sort by date (newest first)
+                allRows.sort((a, b) => new Date(b.date) - new Date(a.date));
+                
+                // Create CSV content
+                let csvContent = headers.join(',') + '\n';
+                
+                allRows.forEach(row => {
+                    const csvRow = [
+                        `"${row.date}"`,
+                        `"${row.symbol}"`,
+                        `"${row.direction}"`,
+                        `"${row.segment}"`,
+                        `"${row.amount}"`,
+                        `"${row.gross}"`,
+                        `"${row.charges}"`,
+                        `"${row.net}"`,
+                        `"${row.netPercentage}"`,
+                        `"${row.winLoss}"`,
+                        `"${row.status}"`,
+                        `"${row.entryPrice}"`,
+                        `"${row.entryQty}"`,
+                        `"${row.entryDate}"`,
+                        `"${row.stopLoss}"`,
+                        `"${row.targetPrice}"`,
+                        `"${row.exitPrice}"`,
+                        `"${row.exitQty}"`,
+                        `"${row.exitDate}"`,
+                        `"${row.strategy}"`,
+                        `"${row.outcomeSummary}"`,
+                        `"${row.emotionalState}"`,
+                        `"${row.notes}"`
+                    ];
+                    csvContent += csvRow.join(',') + '\n';
+                });
+                
+                // Create and download file
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                
+                if (link.download !== undefined) {
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `trade_statement_${new Date().toISOString().split('T')[0]}.csv`);
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                }
+                
+                console.log('CSV export completed successfully');
+                
+            } catch (error) {
+                console.error('Error exporting CSV:', error);
+                alert('Error exporting CSV. Please try again.');
+            }
+        };
         
 
         // --- CHALLENGE MODAL LOGIC ---
