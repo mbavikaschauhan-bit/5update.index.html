@@ -746,6 +746,50 @@
         }
         [data-theme="light"] .trades-table thead { border-bottom-color: var(--border-color); }
         
+        /* Sticky header for trade history table */
+        .trades-table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: var(--bg-secondary);
+        }
+        
+        /* Sticky header for all tables */
+        table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background-color: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        /* Ensure table containers support sticky positioning */
+        .overflow-x-auto {
+            position: relative;
+        }
+        
+        /* Specific fix for trade history table */
+        #trade-history .overflow-x-auto {
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        /* Specific fix for statement table */
+        #trade-statement .overflow-x-auto {
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        /* Force sticky headers to work */
+        #trade-history table thead th,
+        #trade-statement table thead th {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 100 !important;
+            background-color: var(--bg-secondary) !important;
+            border-bottom: 1px solid var(--border-color) !important;
+        }
+        
         .trades-table th {
             color: var(--text-muted);
             font-weight: 500;
