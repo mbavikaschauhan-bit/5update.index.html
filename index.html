@@ -7636,7 +7636,7 @@
                         <td class="px-2 py-2 border-r text-center" style="border-color: var(--border-color); width: 100px; min-width: 100px;">${r.date}</td>
                         <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.symbol}</td>
                         <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.direction}</td>
-                        <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.segment}</td>
+                        <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.segment || '—'}</td>
                         <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.type!=='Trade' ? formatCurrency(r.amount) : '—'}</td>
                         <td class="px-3 py-2 border-r ${r.gross >= 0 ? 'text-green-500' : 'text-red-500'}" style="border-color: var(--border-color);">${r.type==='Trade' ? formatCurrency(r.gross) : '—'}</td>
                         <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.type==='Trade' ? formatCurrency(r.charges) : '—'}</td>
@@ -7666,7 +7666,7 @@
                             <td class="px-2 py-2 border-r text-center" style="border-color: var(--border-color); width: 100px; min-width: 100px;">${r.date}</td>
                             <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.symbol}</td>
                             <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.direction}</td>
-                            <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.segment}</td>
+                            <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.segment || '—'}</td>
                             <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.type!=='Trade' ? formatCurrency(r.amount) : '—'}</td>
                             <td class="px-3 py-2 border-r ${r.gross >= 0 ? 'text-green-500' : 'text-red-500'}" style="border-color: var(--border-color);">${r.type==='Trade' ? formatCurrency(r.gross) : '—'}</td>
                             <td class="px-3 py-2 border-r" style="border-color: var(--border-color);">${r.type==='Trade' ? formatCurrency(r.charges) : '—'}</td>
