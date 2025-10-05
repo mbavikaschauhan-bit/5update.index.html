@@ -1062,6 +1062,60 @@
                 font-size: 0.75rem;
             }
         }
+        
+        /* Connection Status Styles */
+        .connection-status {
+            transition: all 0.3s ease;
+            border-radius: 9999px;
+            padding: 4px 12px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            border: 1px solid transparent;
+        }
+        
+        .connection-status.connected {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            border-color: #047857;
+        }
+        
+        .connection-status.connected .w-2 {
+            background-color: #34d399;
+            box-shadow: 0 0 4px rgba(52, 211, 153, 0.4);
+        }
+        
+        .connection-status.disconnected {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            border-color: #b91c1c;
+        }
+        
+        .connection-status.disconnected .w-2 {
+            background-color: #f87171;
+            box-shadow: 0 0 4px rgba(248, 113, 113, 0.4);
+        }
+        
+        .connection-status.unknown {
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+            color: white;
+            border-color: #374151;
+        }
+        
+        .connection-status.unknown .w-2 {
+            background-color: #9ca3af;
+            box-shadow: 0 0 4px rgba(156, 163, 175, 0.4);
+        }
+        
+        .connection-status .w-2 {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -1158,6 +1212,10 @@
 
                 <div class="flex items-center space-x-2 md:space-x-4">
                     <p id="user-display-name" class="hidden md:block text-sm font-medium" style="color: var(--text-secondary);"></p>
+                    <div id="connection-status" class="connection-status unknown hidden md:flex items-center">
+                        <div class="w-2 h-2 rounded-full"></div>
+                        <span>Syncing...</span>
+                    </div>
                     <div class="flex items-center justify-center space-x-2">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-500"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
                         <label for="theme-toggle-input" class="relative inline-flex items-center cursor-pointer">
@@ -13144,37 +13202,219 @@
         };
         initSupabase();
 
+        // Connection status tracking
+        let supabaseConnectionStatus = 'unknown';
+        let lastSyncTime = null;
+        
+        // Operation queuing to prevent race conditions
+        const operationQueue = new Map();
+        const pendingOperations = new Set();
+        
+        // Helper function to show connection status
+        const updateConnectionStatus = (status, message = '') => {
+            supabaseConnectionStatus = status;
+            const statusIndicator = document.getElementById('connection-status');
+            if (statusIndicator) {
+                statusIndicator.className = `connection-status ${status}`;
+                statusIndicator.textContent = message || (status === 'connected' ? 'Synced' : status === 'disconnected' ? 'Offline' : 'Syncing...');
+            }
+        };
+        
+        // Helper function to show sync notifications
+        const showSyncNotification = (message, type = 'info') => {
+            console.log(`[SYNC] ${message}`);
+            // You can add toast notifications here if you have a toast system
+            if (window.showToast) {
+                showToast(message, type);
+            }
+        };
+        
+        // Helper function to add timeout to Supabase operations
+        const withTimeout = (promise, timeoutMs = 10000, operation = 'operation') => {
+            return Promise.race([
+                promise,
+                new Promise((_, reject) => {
+                    setTimeout(() => {
+                        reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+                    }, timeoutMs);
+                })
+            ]);
+        };
+        
+        // Helper function to retry operations with exponential backoff
+        const retryOperation = async (operationFn, maxRetries = 3, baseDelay = 1000) => {
+            let lastError;
+            
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    return await operationFn();
+                } catch (error) {
+                    lastError = error;
+                    
+                    // Don't retry on timeout or authentication errors
+                    if (error.message.includes('timed out') || 
+                        error.message.includes('auth') || 
+                        error.message.includes('permission')) {
+                        throw error;
+                    }
+                    
+                    // Don't retry on the last attempt
+                    if (attempt === maxRetries) {
+                        throw error;
+                    }
+                    
+                    // Calculate delay with exponential backoff
+                    const delay = baseDelay * Math.pow(2, attempt);
+                    console.log(`Operation failed, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1})`);
+                    
+                    // Wait before retrying
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+            
+            throw lastError;
+        };
+        
+        // Helper function to queue operations and prevent race conditions
+        const queueOperation = async (operationKey, operationFn) => {
+            // If operation is already pending, wait for it to complete
+            if (pendingOperations.has(operationKey)) {
+                return new Promise((resolve, reject) => {
+                    const queue = operationQueue.get(operationKey) || [];
+                    queue.push({ resolve, reject });
+                    operationQueue.set(operationKey, queue);
+                });
+            }
+            
+            // Mark operation as pending
+            pendingOperations.add(operationKey);
+            
+            try {
+                const result = await retryOperation(operationFn);
+                
+                // Resolve all queued operations with the same result
+                const queue = operationQueue.get(operationKey) || [];
+                queue.forEach(({ resolve }) => resolve(result));
+                operationQueue.delete(operationKey);
+                
+                return result;
+            } catch (error) {
+                // Reject all queued operations with the same error
+                const queue = operationQueue.get(operationKey) || [];
+                queue.forEach(({ reject: queueReject }) => queueReject(error));
+                operationQueue.delete(operationKey);
+                
+                throw error;
+            } finally {
+                // Remove from pending operations
+                pendingOperations.delete(operationKey);
+            }
+        };
+
         const dataStore = {
             async getTrades() {
-                if (supabase) {
-                    const { data, error } = await supabase.from('trades').select('*').order('entry_date', { ascending: true });
-                    if (!error) return data || [];
+                try {
+                    if (supabase) {
+                        const supabasePromise = supabase.from('trades').select('*').order('entry_date', { ascending: true });
+                        const { data, error } = await withTimeout(supabasePromise, 10000, 'Fetch trades');
+                        
+                        if (!error) {
+                            updateConnectionStatus('connected');
+                            lastSyncTime = new Date();
+                            return data || [];
+                        } else {
+                            console.warn('Supabase getTrades error, falling back to localStorage:', error);
+                            showSyncNotification('Using offline data - some features may be limited', 'warning');
+                            updateConnectionStatus('disconnected');
+                        }
+                    }
+                } catch (error) {
+                    if (error.message.includes('timed out')) {
+                        console.warn('Supabase getTrades timeout, using localStorage:', error);
+                        showSyncNotification('Connection timeout - using offline data', 'warning');
+                    } else {
+                        console.warn('Supabase connection failed, using localStorage:', error);
+                        showSyncNotification('Connection issue - using offline data', 'warning');
+                    }
+                    updateConnectionStatus('disconnected');
                 }
                 return JSON.parse(localStorage.getItem('trades') || '[]') || [];
             },
             async upsertTrade(trade) {
-                if (supabase) {
-                    const { error } = await supabase.from('trades').upsert(trade);
-                    if (error) {
-                        console.error('Supabase upsert error:', error);
-                        throw error;
+                const operationKey = `upsert-trade-${trade.id}`;
+                
+                return queueOperation(operationKey, async () => {
+                    try {
+                        if (supabase) {
+                            const supabasePromise = supabase.from('trades').upsert(trade);
+                            const { error } = await withTimeout(supabasePromise, 10000, 'Save trade');
+                            
+                            if (!error) {
+                                updateConnectionStatus('connected');
+                                lastSyncTime = new Date();
+                                showSyncNotification('Trade saved successfully', 'success');
+                                return true;
+                            } else {
+                                console.warn('Supabase upsert error, saving locally:', error);
+                                showSyncNotification('Saved locally - will sync when connection is restored', 'warning');
+                                updateConnectionStatus('disconnected');
+                            }
+                        }
+                    } catch (error) {
+                        if (error.message.includes('timed out')) {
+                            console.warn('Supabase upsert timeout, saving locally:', error);
+                            showSyncNotification('Connection timeout - saved locally', 'warning');
+                        } else {
+                            console.warn('Supabase connection failed, saving locally:', error);
+                            showSyncNotification('Connection issue - saved locally', 'warning');
+                        }
+                        updateConnectionStatus('disconnected');
                     }
+                    
+                    // Fallback to localStorage
+                    const arr = await this.getTrades();
+                    const idx = arr.findIndex(x => String(x.id) === String(trade.id));
+                    if (idx >= 0) arr[idx] = trade; else arr.push(trade);
+                    localStorage.setItem('trades', JSON.stringify(arr));
                     return true;
-                }
-                const arr = await this.getTrades();
-                const idx = arr.findIndex(x => String(x.id) === String(trade.id));
-                if (idx >= 0) arr[idx] = trade; else arr.push(trade);
-                localStorage.setItem('trades', JSON.stringify(arr));
-                return true;
+                });
             },
             async deleteTrade(id) {
-                if (supabase) {
-                    await supabase.from('trades').delete().eq('id', id);
-                }
-                const arr = await this.getTrades();
-                const updated = arr.filter(x => String(x.id) !== String(id));
-                localStorage.setItem('trades', JSON.stringify(updated));
-                return true;
+                const operationKey = `delete-trade-${id}`;
+                
+                return queueOperation(operationKey, async () => {
+                    try {
+                        if (supabase) {
+                            const supabasePromise = supabase.from('trades').delete().eq('id', id);
+                            const { error } = await withTimeout(supabasePromise, 10000, 'Delete trade');
+                            
+                            if (!error) {
+                                updateConnectionStatus('connected');
+                                lastSyncTime = new Date();
+                                showSyncNotification('Trade deleted successfully', 'success');
+                            } else {
+                                console.warn('Supabase delete error, deleting locally:', error);
+                                showSyncNotification('Deleted locally - will sync when connection is restored', 'warning');
+                                updateConnectionStatus('disconnected');
+                            }
+                        }
+                    } catch (error) {
+                        if (error.message.includes('timed out')) {
+                            console.warn('Supabase delete timeout, deleting locally:', error);
+                            showSyncNotification('Connection timeout - deleted locally', 'warning');
+                        } else {
+                            console.warn('Supabase connection failed, deleting locally:', error);
+                            showSyncNotification('Connection issue - deleted locally', 'warning');
+                        }
+                        updateConnectionStatus('disconnected');
+                    }
+                    
+                    // Always update localStorage
+                    const arr = await this.getTrades();
+                    const updated = arr.filter(x => String(x.id) !== String(id));
+                    localStorage.setItem('trades', JSON.stringify(updated));
+                    return true;
+                });
             },
             async deleteMultipleTrades(ids) {
                 if (!ids || ids.length === 0) {
@@ -13217,31 +13457,71 @@
                 }
             },
             async getLedger() {
-                if (supabase) {
-                    const { data, error } = await supabase.from('ledger').select('*').order('date', { ascending: true });
-                    if (!error) return data || [];
+                try {
+                    if (supabase) {
+                        const supabasePromise = supabase.from('ledger').select('*').order('date', { ascending: true });
+                        const { data, error } = await withTimeout(supabasePromise, 10000, 'Fetch ledger');
+                        
+                        if (!error) {
+                            updateConnectionStatus('connected');
+                            lastSyncTime = new Date();
+                            return data || [];
+                        } else {
+                            console.warn('Supabase getLedger error, falling back to localStorage:', error);
+                            showSyncNotification('Using offline ledger data', 'warning');
+                            updateConnectionStatus('disconnected');
+                        }
+                    }
+                } catch (error) {
+                    if (error.message.includes('timed out')) {
+                        console.warn('Supabase getLedger timeout, using localStorage:', error);
+                        showSyncNotification('Connection timeout - using offline data', 'warning');
+                    } else {
+                        console.warn('Supabase connection failed, using localStorage:', error);
+                        showSyncNotification('Connection issue - using offline data', 'warning');
+                    }
+                    updateConnectionStatus('disconnected');
                 }
                 return JSON.parse(localStorage.getItem('ledger') || '[]') || [];
             },
             async upsertLedger(entry) {
-                try {
-                    if (supabase) {
-                        const { error } = await supabase.from('ledger').upsert(entry);
-                        if (error) {
-                            console.error('Supabase ledger upsert error:', error);
-                            throw new Error(`Database error: ${error.message}`);
+                const operationKey = `upsert-ledger-${entry.id}`;
+                
+                return queueOperation(operationKey, async () => {
+                    try {
+                        if (supabase) {
+                            const supabasePromise = supabase.from('ledger').upsert(entry);
+                            const { error } = await withTimeout(supabasePromise, 10000, 'Save ledger entry');
+                            
+                            if (!error) {
+                                updateConnectionStatus('connected');
+                                lastSyncTime = new Date();
+                                showSyncNotification('Ledger entry saved successfully', 'success');
+                                return true;
+                            } else {
+                                console.warn('Supabase ledger upsert error, saving locally:', error);
+                                showSyncNotification('Saved locally - will sync when connection is restored', 'warning');
+                                updateConnectionStatus('disconnected');
+                            }
                         }
-                        return true;
+                    } catch (error) {
+                        if (error.message.includes('timed out')) {
+                            console.warn('Supabase ledger upsert timeout, saving locally:', error);
+                            showSyncNotification('Connection timeout - saved locally', 'warning');
+                        } else {
+                            console.warn('Supabase connection failed, saving locally:', error);
+                            showSyncNotification('Connection issue - saved locally', 'warning');
+                        }
+                        updateConnectionStatus('disconnected');
                     }
+                    
+                    // Fallback to localStorage
                     const arr = await this.getLedger();
                     const idx = arr.findIndex(x => String(x.id) === String(entry.id));
                     if (idx >= 0) arr[idx] = entry; else arr.push(entry);
                     localStorage.setItem('ledger', JSON.stringify(arr));
                     return true;
-                } catch (error) {
-                    console.error('upsertLedger failed:', error);
-                    throw error;
-                }
+                });
             },
             async deleteLedger(id) {
                 try {
