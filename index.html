@@ -3181,105 +3181,8 @@
             }
         };
 
-        const db = {
-            serverTimestamp: () => new Date().toISOString(),
-            doc: (collectionPath, id) => ({ collection: collectionPath.split('/').pop(), id }),
-            setDoc: async (docRef, data) => {
-                const payload = { ...data, id: docRef.id };
-                const { error } = await supabase
-                    .from(docRef.collection)
-                    .upsert(payload, { returning: 'minimal' });
-                if (error) throw error;
-            },
-            addDoc: async (collectionPath, data) => {
-                const tableName = collectionPath.split('/').pop();
-                const { data: inserted, error } = await supabase
-                    .from(tableName)
-                    .insert(Array.isArray(data) ? data : [data])
-                    .select();
-                if (error) throw error;
-                return inserted;
-            },
-            getDoc: async (docRef) => {
-                const { data, error } = await supabase
-                    .from(docRef.collection)
-                    .select('*')
-                    .eq('id', docRef.id)
-                    .single();
-                if (error && error.code !== 'PGRST116') {
-                    throw error;
-                }
-                return {
-                    exists: () => !!data,
-                    data: () => data,
-                    id: docRef.id,
-                };
-            },
-            getDocs: async (queryObj) => {
-                let query = supabase.from(queryObj.collection).select('*');
-                (queryObj.filters || []).forEach(f => {
-                    if (typeof query[f.op] === 'function') {
-                        query = query[f.op](f.field, f.value);
-                    } else {
-                        query = query.eq(f.field, f.value);
-                    }
-                });
-                if (queryObj.orderBy) {
-                    query = query.order(queryObj.orderBy.field, { ascending: queryObj.orderBy.direction === 'asc' });
-                }
-                if (queryObj.limit) {
-                    query = query.limit(queryObj.limit);
-                }
-                const { data, error } = await query;
-                if (error) throw error;
-                return {
-                    docs: (data || []).map(doc => ({ id: doc.id, data: () => doc })),
-                    empty: !data || data.length === 0,
-                };
-            },
-            onSnapshot: (queryObj, onNext, onError) => {
-                const channel = supabase.channel(`realtime:${queryObj.collection}:${Date.now()}`);
-                const handlePayload = async () => {
-                    try {
-                        const snapshot = await db.getDocs(queryObj);
-                        onNext(snapshot);
-                    } catch (err) {
-                        if (onError) onError(err);
-                        else console.error(err);
-                    }
-                };
-                channel.on('postgres_changes', { event: '*', schema: 'public', table: queryObj.collection }, async () => {
-                    await handlePayload();
-                });
-                channel.subscribe(async (status) => {
-                    if (status === 'SUBSCRIBED') {
-                        await handlePayload();
-                    }
-                });
-                return () => supabase.removeChannel(channel);
-            }
-        };
-
-        const collection = (collectionName) => collectionName;
-        
-        const query = (collectionName, ...constraints) => {
-            let q = { collection: collectionName, filters: [], orderBy: null, limit: null };
-            constraints.forEach(c => { q = c(q); });
-            return q;
-        };
-        const where = (field, op, value) => (q) => {
-            const supabaseOps = { '==': 'eq', '<': 'lt', '<=': 'lte', '>': 'gt', '>=': 'gte', 'array-contains': 'cs', 'in': 'in' };
-            q.filters.push({ field, op: supabaseOps[op], value });
-            return q;
-        };
-        const orderBy = (field, direction = 'asc') => (q) => {
-            q.orderBy = { field, direction };
-            return q;
-        };
-        const limit = (num) => (q) => {
-            q.limit = num;
-            return q;
-        };
+        // Removed unused Firestore-style db object - now using direct Supabase operations
+        // Removed unused Firestore helper functions - now using direct Supabase operations
         // --- End of Inlined Adapter ---
 
         // === Small helper services for trades and files ===
@@ -4023,89 +3926,117 @@
         
         // --- DATA LISTENERS (Supabase Realtime) ---
         const setupSupabaseListeners = () => {
-                console.log('setupSupabaseListeners called - user:', appState.user?.id);
-                if (!appState.user) {
-                    console.log('No user found, skipping listener setup');
-                    return;
-                }
+            console.log('setupSupabaseListeners called - user:', appState.user?.id);
+            if (!appState.user) {
+                console.log('No user found, skipping listener setup');
+                return;
+            }
             const userId = appState.user.id;
-                console.log('Setting up Supabase listeners for user:', userId);
+            console.log('Setting up Supabase listeners for user:', userId);
             
-            const tradesQuery = query(collection(`trades`), where('user_id', '==', userId), orderBy("entry_date", "desc"));
-            appState.unsubscribeTrades = db.onSnapshot(tradesQuery, (snapshot) => {
-                    console.log('Supabase trades listener fired - snapshot docs:', snapshot.docs.length);
-                appState.trades = snapshot.docs.map(doc => doc.data());
-                    console.log('Updated appState.trades with count:', appState.trades.length);
-                updateTradeDependentUI();
-                    
-                    // Force re-render of current page if it's data-dependent
-                    const currentPage = document.querySelector('.page.active');
-                    if (currentPage && ['trade-calendar', 'reports', 'trade-statement'].includes(currentPage.id)) {
-                        console.log('Current page is data-dependent, forcing re-render:', currentPage.id);
-                        setTimeout(() => {
-                            if (currentPage.id === 'trade-calendar') {
-                                console.log('Re-rendering calendar with Supabase data');
-                                renderCalendar();
-                            }
-                            if (currentPage.id === 'reports') {
-                                console.log('Re-rendering reports with Supabase data');
-                                renderReports();
-                            }
-                            if (currentPage.id === 'trade-statement') {
-                                console.log('Re-rendering statement with Supabase data');
-                                renderStatement();
-                            }
-                        }, 10);
+            // Clean up existing listeners
+            if (appState.unsubscribeTrades) appState.unsubscribeTrades();
+            if (appState.unsubscribeLedger) appState.unsubscribeLedger();
+            if (appState.unsubscribeProfile) appState.unsubscribeProfile();
+            if (appState.unsubscribeChallenge) appState.unsubscribeChallenge();
+            if (appState.unsubscribeChallengeHistory) appState.unsubscribeChallengeHistory();
+            
+            // Set up Supabase realtime listeners
+            const tradesChannel = supabase.channel(`trades-${userId}`)
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'trades', filter: `user_id=eq.${userId}` },
+                    async (payload) => {
+                        console.log('Supabase trades realtime update:', payload);
+                        // Refresh trades data
+                        appState.trades = await dataStore.getTrades();
+                        console.log('Updated appState.trades with count:', appState.trades.length);
+                        updateTradeDependentUI();
+                        
+                        // Force re-render of current page if it's data-dependent
+                        const currentPage = document.querySelector('.page.active');
+                        if (currentPage && ['trade-calendar', 'reports', 'trade-statement'].includes(currentPage.id)) {
+                            console.log('Current page is data-dependent, forcing re-render:', currentPage.id);
+                            setTimeout(() => {
+                                if (currentPage.id === 'trade-calendar') {
+                                    console.log('Re-rendering calendar with Supabase data');
+                                    renderCalendar();
+                                }
+                                if (currentPage.id === 'reports') {
+                                    console.log('Re-rendering reports with Supabase data');
+                                    renderReports();
+                                }
+                                if (currentPage.id === 'trade-statement') {
+                                    console.log('Re-rendering statement with Supabase data');
+                                    renderStatement();
+                                }
+                            }, 10);
+                        }
                     }
-            }, (error) => {
-                console.error("Error fetching trades:", error);
-                showToast("Could not fetch trades.", "error");
-            });
+                )
+                .subscribe();
 
-            const ledgerQuery = query(collection(`ledger`), where('user_id', '==', userId), orderBy("date", "desc"));
-            appState.unsubscribeLedger = db.onSnapshot(ledgerQuery, (snapshot) => {
-                    console.log('Supabase ledger listener fired - snapshot docs:', snapshot.docs.length);
-                appState.ledger = snapshot.docs.map(doc => doc.data());
-                    console.log('Updated appState.ledger with count:', appState.ledger.length);
-                 updateLedgerDependentUI();
-                    
-                    // Force re-render of current page if it's ledger-dependent
-                    const currentPage = document.querySelector('.page.active');
-                    if (currentPage && ['trade-statement'].includes(currentPage.id)) {
-                        console.log('Current page is ledger-dependent, forcing re-render:', currentPage.id);
-                        setTimeout(() => {
-                            if (currentPage.id === 'trade-statement') {
-                                console.log('Re-rendering statement with Supabase ledger data');
-                                renderStatement();
-                            }
-                        }, 10);
+            const ledgerChannel = supabase.channel(`ledger-${userId}`)
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'ledger', filter: `user_id=eq.${userId}` },
+                    async (payload) => {
+                        console.log('Supabase ledger realtime update:', payload);
+                        // Refresh ledger data
+                        appState.ledger = await dataStore.getLedger();
+                        console.log('Updated appState.ledger with count:', appState.ledger.length);
+                        updateLedgerDependentUI();
+                        
+                        // Force re-render of current page if it's ledger-dependent
+                        const currentPage = document.querySelector('.page.active');
+                        if (currentPage && ['trade-statement'].includes(currentPage.id)) {
+                            console.log('Current page is ledger-dependent, forcing re-render:', currentPage.id);
+                            setTimeout(() => {
+                                if (currentPage.id === 'trade-statement') {
+                                    console.log('Re-rendering statement with Supabase ledger data');
+                                    renderStatement();
+                                }
+                            }, 10);
+                        }
                     }
-            }, (error) => {
-                console.error("Error fetching ledger:", error);
-                showToast("Could not fetch fund data.", "error");
-            });
-            
-            const profileQuery = query(collection('profiles'), where('id', '==', userId), limit(1));
-            appState.unsubscribeProfile = db.onSnapshot(profileQuery, (snapshot) => {
-                if (!snapshot.empty) {
-                    renderProfilePage(snapshot.docs[0].data());
-                }
-            });
+                )
+                .subscribe();
 
-            const activeChallengeQuery = query(collection('challenges'), where('user_id', '==', userId), where('status', '==', 'active'), limit(1));
-            appState.unsubscribeChallenge = db.onSnapshot(activeChallengeQuery, (snapshot) => {
-                appState.challenge = snapshot.empty ? null : snapshot.docs[0].data();
-                renderChallenge();
-            });
+            const profileChannel = supabase.channel(`profiles-${userId}`)
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+                    async (payload) => {
+                        console.log('Supabase profile realtime update:', payload);
+                        if (payload.new) {
+                            renderProfilePage(payload.new);
+                        }
+                    }
+                )
+                .subscribe();
 
-            const historyQuery = query(collection('challenges'), where('user_id', '==', userId), where("status", "in", ["completed", "failed"]));
-            appState.unsubscribeChallengeHistory = db.onSnapshot(historyQuery, (snapshot) => {
-                const history = snapshot.docs.map(doc => doc.data());
-                history.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
-                appState.challengeHistory = history;
-                renderChallengeHistory();
-            }, (error) => console.error("Error fetching challenge history:", error));
-            
+            const challengeChannel = supabase.channel(`challenges-${userId}`)
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'challenges', filter: `user_id=eq.${userId}` },
+                    async (payload) => {
+                        console.log('Supabase challenge realtime update:', payload);
+                        // Refresh challenge data
+                        const { data: activeChallenge } = await supabase
+                            .from('challenges')
+                            .select('*')
+                            .eq('user_id', userId)
+                            .eq('status', 'active')
+                            .limit(1)
+                            .single();
+                        appState.challenge = activeChallenge;
+                        renderChallenge();
+                    }
+                )
+                .subscribe();
+
+            // Store unsubscribe functions
+            appState.unsubscribeTrades = () => supabase.removeChannel(tradesChannel);
+            appState.unsubscribeLedger = () => supabase.removeChannel(ledgerChannel);
+            appState.unsubscribeProfile = () => supabase.removeChannel(profileChannel);
+            appState.unsubscribeChallenge = () => supabase.removeChannel(challengeChannel);
+            appState.unsubscribeChallengeHistory = () => {}; // No separate history listener needed
         };
         
         const updateTradeDependentUI = () => {
@@ -13189,18 +13120,7 @@
         }, 100);
 
         // --- SUPABASE CONTROLS ---
-        // Supabase client and datastore
-        let sbClient = null;
-        const initSupabase = () => {
-            const url = localStorage.getItem('SUPABASE_URL');
-            const key = localStorage.getItem('SUPABASE_ANON_KEY');
-            if (window.supabase && url && key) {
-                sbClient = window.supabase.createClient(url, key);
-            } else {
-                sbClient = null;
-            }
-        };
-        initSupabase();
+        // Using the main supabase client from line 3111
 
         // Connection status tracking
         let supabaseConnectionStatus = 'unknown';
@@ -14607,7 +14527,7 @@
             console.debug('AI Analyst: Final trades array:', trades);
             console.debug('AI Analyst: Trades length:', trades.length);
             console.debug('AI Analyst: DataStore available:', !!dataStore);
-            console.debug('AI Analyst: Supabase client available:', !!sbClient);
+            console.debug('AI Analyst: Supabase client available:', !!supabase);
             
             // Calculate core metrics with defensive checks
             const metrics = calculateTradeMetrics(trades);
