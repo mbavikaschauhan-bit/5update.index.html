@@ -2257,7 +2257,7 @@
                     <div id="trade-statement" class="page">
                          <!-- Filter Section -->
                         <div class="rounded-lg shadow-sm p-4 mb-6" style="background-color: var(--bg-primary); border: 1px solid var(--border-color);">
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 items-end">
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
                                 <div>
                                     <label for="filter-type" class="block text-sm font-medium" style="color: var(--text-secondary);">Transaction Type</label>
                                     <select id="filter-type" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
@@ -2293,12 +2293,64 @@
                                     <label for="filter-end-date" class="block text-sm font-medium" style="color: var(--text-secondary);">End Date</label>
                                     <input type="date" id="filter-end-date" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
                                 </div>
-                                <button id="apply-filter-btn" class="btn-primary font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit">Apply</button>
-                                <button id="reset-filter-btn" class="font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">Reset</button>
-                                <button id="export-csv-btn" class="font-semibold py-2 px-4 rounded-md shadow-sm w-full h-fit flex items-center justify-center" style="background-color: #10b981; color: white;">
-                                    <i data-feather="download" class="mr-2 h-4 w-4"></i>Export CSV
-                                </button>
+                                <div>
+                                    <label class="block text-sm font-medium" style="color: var(--text-secondary);">&nbsp;</label>
+                                    <button id="apply-filter-btn" class="btn-primary font-semibold py-2 px-4 rounded-md shadow-sm w-full">Apply</button>
+                                </div>
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end mt-1">
+                                <div>
+                                    <label for="filter-status" class="block text-sm font-medium" style="color: var(--text-secondary);">Status</label>
+                                    <select id="filter-status" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
+                                        <option value="">All Status</option>
+                                        <option value="Open">Open</option>
+                                        <option value="Closed">Closed</option>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Cancelled">Cancelled</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="filter-winloss" class="block text-sm font-medium" style="color: var(--text-secondary);">Win/Loss</label>
+                                    <select id="filter-winloss" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
+                                        <option value="">All</option>
+                                        <option value="Win">Win</option>
+                                        <option value="Loss">Loss</option>
+                                        <option value="Break Even">Break Even</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="filter-segment" class="block text-sm font-medium" style="color: var(--text-secondary);">Segment</label>
+                                    <select id="filter-segment" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
+                                        <option value="">All Segments</option>
+                                        <option value="Equity">Equity</option>
+                                        <option value="F&O">F&O</option>
+                                        <option value="Currency">Currency</option>
+                                        <option value="Commodity">Commodity</option>
+                                        <option value="Debt">Debt</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="filter-direction" class="block text-sm font-medium" style="color: var(--text-secondary);">Direction</label>
+                                    <select id="filter-direction" class="w-full rounded-md text-sm border focus:border-blue-500 focus:ring-blue-500" style="background-color: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color);">
+                                        <option value="">All Directions</option>
+                                        <option value="Buy">Buy</option>
+                                        <option value="Sell">Sell</option>
+                                        <option value="Long">Long</option>
+                                        <option value="Short">Short</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium" style="color: var(--text-secondary);">&nbsp;</label>
+                                    <button id="reset-filter-btn" class="font-semibold py-2 px-4 rounded-md shadow-sm w-full" style="background-color: var(--bg-tertiary); color: var(--text-secondary);">Reset</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Export CSV Button -->
+                        <div class="flex justify-end mb-4">
+                            <button id="export-csv-btn" class="font-semibold py-1 px-3 rounded-md shadow-sm flex items-center justify-center text-sm" style="background-color: #10b981; color: white;">
+                                <i data-feather="download" class="mr-1 h-3 w-3"></i>Export CSV
+                            </button>
                         </div>
 
                         <div class="rounded-lg shadow-sm overflow-x-auto" style="background-color: var(--bg-primary); border: 1px solid var(--border-color);">
@@ -7658,6 +7710,23 @@
                         
                         return true;
                     });
+                }
+                
+                // Apply new filters
+                if (filters.status) {
+                    allRows = allRows.filter(row => row.status === filters.status);
+                }
+                
+                if (filters.winloss) {
+                    allRows = allRows.filter(row => row.winLoss === filters.winloss);
+                }
+                
+                if (filters.segment) {
+                    allRows = allRows.filter(row => row.segment === filters.segment);
+                }
+                
+                if (filters.direction) {
+                    allRows = allRows.filter(row => row.direction === filters.direction);
                 }
                 
                 // Show no results message if no rows match filters
@@ -13230,13 +13299,21 @@
             const strategy = document.getElementById('filter-strategy')?.value || 'All Strategies';
             const startDate = document.getElementById('filter-start-date')?.value || '';
             const endDate = document.getElementById('filter-end-date')?.value || '';
+            const status = document.getElementById('filter-status')?.value || '';
+            const winloss = document.getElementById('filter-winloss')?.value || '';
+            const segment = document.getElementById('filter-segment')?.value || '';
+            const direction = document.getElementById('filter-direction')?.value || '';
             
             // Apply filters to statement
             const filters = {
                 transactionType: transactionType !== 'All Types' ? transactionType : null,
                 strategy: strategy !== 'All Strategies' ? strategy : null,
                 startDate: startDate || null,
-                endDate: endDate || null
+                endDate: endDate || null,
+                status: status || null,
+                winloss: winloss || null,
+                segment: segment || null,
+                direction: direction || null
             };
             
             renderStatement(filters);
@@ -13248,11 +13325,19 @@
             const filterStrategy = document.getElementById('filter-strategy');
             const filterStartDate = document.getElementById('filter-start-date');
             const filterEndDate = document.getElementById('filter-end-date');
+            const filterStatus = document.getElementById('filter-status');
+            const filterWinloss = document.getElementById('filter-winloss');
+            const filterSegment = document.getElementById('filter-segment');
+            const filterDirection = document.getElementById('filter-direction');
             
             if (filterType) filterType.value = 'All Types';
             if (filterStrategy) filterStrategy.value = ''; // Empty string matches the option value
             if (filterStartDate) filterStartDate.value = '';
             if (filterEndDate) filterEndDate.value = '';
+            if (filterStatus) filterStatus.value = '';
+            if (filterWinloss) filterWinloss.value = '';
+            if (filterSegment) filterSegment.value = '';
+            if (filterDirection) filterDirection.value = '';
             
             // Render statement without filters (show all data)
             renderStatement();
